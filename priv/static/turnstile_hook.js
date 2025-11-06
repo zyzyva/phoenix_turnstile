@@ -174,14 +174,30 @@ const TurnstileHook = {
 
   createWidget(container) {
     try {
+      // Set a timeout to bypass if widget doesn't complete in 6 seconds
+      this.timeoutId = setTimeout(() => {
+        console.warn("⚠️ Turnstile: Widget timeout after 6 seconds, bypassing")
+        this.sendBypassToken("timeout")
+      }, 6000)
+
       const widgetId = window.turnstile.render(container, {
         sitekey: this.sitekey,
+        theme: 'auto',
+        size: 'invisible',
         callback: (token) => {
           console.log("✅ Turnstile: Token generated successfully")
+          if (this.timeoutId) {
+            clearTimeout(this.timeoutId)
+            this.timeoutId = null
+          }
           this.pushEvent("turnstile_callback", { token })
         },
         'error-callback': () => {
           console.warn("⚠️ Turnstile: Widget error")
+          if (this.timeoutId) {
+            clearTimeout(this.timeoutId)
+            this.timeoutId = null
+          }
           this.sendBypassToken("widget-error")
         },
         'expired-callback': () => {
@@ -189,21 +205,35 @@ const TurnstileHook = {
           this.pushEvent("turnstile_callback", { token: null })
         },
         'timeout-callback': () => {
-          console.warn("⚠️ Turnstile: Widget timeout")
+          console.warn("⚠️ Turnstile: Widget timeout callback")
+          if (this.timeoutId) {
+            clearTimeout(this.timeoutId)
+            this.timeoutId = null
+          }
           this.sendBypassToken("widget-timeout")
-        },
-        'render': 'explicit'
+        }
       })
-      console.log("✅ Turnstile: Widget loaded successfully")
+      console.log("✅ Turnstile: Invisible widget loaded successfully")
       return widgetId
     } catch (error) {
       console.error("❌ Turnstile: Failed to create widget", error)
+      if (this.timeoutId) {
+        clearTimeout(this.timeoutId)
+        this.timeoutId = null
+      }
       this.sendBypassToken("create-error")
       return undefined
     }
   },
 
   destroyed() {
+    // Clear timeout if still pending
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId)
+      this.timeoutId = null
+    }
+
+    // Remove widget
     if (window.turnstile && this.widgetId !== undefined) {
       try {
         window.turnstile.remove(this.widgetId)
